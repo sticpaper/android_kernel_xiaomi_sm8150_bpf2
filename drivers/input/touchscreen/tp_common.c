@@ -14,7 +14,10 @@ struct kobject *touchpanel_kobj;
 
 TS_ENABLE_FOPS(double_tap)
 TS_ENABLE_FOPS(fod_status)
+#ifdef CONFIG_MACH_XIAOMI_NABU
 TS_ENABLE_FOPS(pen)
+TS_ENABLE_FOPS(pen_update)
+#endif
 
 static int __init tp_common_init(void)
 {

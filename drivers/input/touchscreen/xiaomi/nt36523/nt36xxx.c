@@ -26,6 +26,7 @@
 #include <linux/debugfs.h>
 #include <linux/of_gpio.h>
 #include <linux/of_irq.h>
+#include <uapi/linux/sched/types.h>
 
 #ifdef CONFIG_DRM
 #include <linux/msm_drm_notify.h>
@@ -150,6 +151,33 @@ static struct tp_common_ops double_tap_ops = {
 	.store = double_tap_store,
 };
 #endif
+#endif
+
+#ifdef CONFIG_TOUCHSCREEN_COMMON
+static ssize_t pen_update_show(struct kobject *kobj,
+			struct kobj_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%d\n", ts->pen_update);
+}
+
+static ssize_t pen_update_store(struct kobject *kobj,
+			struct kobj_attribute *attr, const char *buf,
+			size_t count)
+{
+	int rc, val;
+
+	rc = kstrtoint(buf, 10, &val);
+	if (rc)
+		return -EINVAL;
+
+	ts->pen_update = !!val;
+	return count;
+}
+
+static struct tp_common_ops pen_update_ops = {
+	.show = pen_update_show,
+	.store = pen_update_store,
+};
 #endif
 
 #ifdef CONFIG_MTK_SPI
@@ -1687,6 +1715,14 @@ static irqreturn_t nvt_ts_work_func(int irq, void *data)
 	uint32_t pen_btn2 = 0;
 	uint32_t pen_battery = 0;
 
+	static struct task_struct *touch_task = NULL;
+	struct sched_param par = { .sched_priority = MAX_RT_PRIO - 1};
+
+	if (touch_task == NULL) {
+		touch_task = current;
+		sched_setscheduler_nocheck(touch_task, SCHED_FIFO, &par);
+	}
+
 #if WAKEUP_GESTURE
 	if (bTouchIsAwake == 0) {
 		pm_wakeup_event(&ts->input_dev->dev, 5000);
@@ -2459,6 +2495,13 @@ static int nvt_set_cur_value(int nvt_mode, int nvt_value)
 		ts->pen_input_dev_enable = !!nvt_value;
 		NVT_LOG("%s pen input dev",
 			ts->pen_input_dev_enable ? "ENABLE" : "DISABLE");
+#ifdef CONFIG_TOUCHSCREEN_COMMON
+		/* zhaoyuenan: add: change connect mi pen id
+		 * xiaomi smart pen (1st) use the pen id of 17
+		 * xiaomi smart pen (2st) use the pen id of 18
+		 * if the pen id 18, use the new firmware. */
+		ts->pen_update = (nvt_value == 18) ? true : false;
+#endif
 		disable_pen_input_device(!ts->pen_input_dev_enable);
 		release_pen_event();
 		return 0;
@@ -3132,9 +3175,9 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 
 		if (ts->wgp_stylus) {
 			input_set_abs_params(ts->pen_input_dev, ABS_X, 0,
-					     ts->abs_x_max * 2 - 1, 0, 0);
+					     ts->abs_x_max * 8 - 1, 0, 0);
 			input_set_abs_params(ts->pen_input_dev, ABS_Y, 0,
-					     ts->abs_y_max * 2 - 1, 0, 0);
+					     ts->abs_y_max * 8 - 1, 0, 0);
 		} else {
 			input_set_abs_params(ts->pen_input_dev, ABS_X, 0,
 					     ts->abs_x_max - 1, 0, 0);
@@ -3166,6 +3209,7 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 
 #ifdef CONFIG_TOUCHSCREEN_COMMON
 		ret = tp_common_set_pen_ops(&pen_ops);
+		ret = tp_common_set_pen_update_ops(&pen_update_ops);
 		if (ret < 0) {
 			NVT_ERR("%s: Failed to create pen node err=%d\n",
 				__func__, ret);
@@ -3236,7 +3280,7 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 	INIT_DELAYED_WORK(&ts->nvt_fwu_work, Boot_Update_Firmware);
 	// please make sure boot update start after display reset(RESX) sequence
 	queue_delayed_work(nvt_fwu_wq, &ts->nvt_fwu_work,
-			   msecs_to_jiffies(14000));
+			   msecs_to_jiffies(100));
 #endif
 
 	NVT_LOG("NVT_TOUCH_ESD_PROTECT is %d\n", NVT_TOUCH_ESD_PROTECT);
