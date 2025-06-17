@@ -153,6 +153,33 @@ static struct tp_common_ops double_tap_ops = {
 #endif
 #endif
 
+#ifdef CONFIG_TOUCHSCREEN_COMMON
+static ssize_t pen_update_show(struct kobject *kobj,
+			struct kobj_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%d\n", ts->pen_update);
+}
+
+static ssize_t pen_update_store(struct kobject *kobj,
+			struct kobj_attribute *attr, const char *buf,
+			size_t count)
+{
+	int rc, val;
+
+	rc = kstrtoint(buf, 10, &val);
+	if (rc)
+		return -EINVAL;
+
+	ts->pen_update = !!val;
+	return count;
+}
+
+static struct tp_common_ops pen_update_ops = {
+	.show = pen_update_show,
+	.store = pen_update_store,
+};
+#endif
+
 #ifdef CONFIG_MTK_SPI
 const struct mt_chip_conf spi_ctrdata = {
 	.setuptime = 25,
@@ -2468,6 +2495,13 @@ static int nvt_set_cur_value(int nvt_mode, int nvt_value)
 		ts->pen_input_dev_enable = !!nvt_value;
 		NVT_LOG("%s pen input dev",
 			ts->pen_input_dev_enable ? "ENABLE" : "DISABLE");
+#ifdef CONFIG_TOUCHSCREEN_COMMON
+		/* zhaoyuenan: add: change connect mi pen id
+		 * xiaomi smart pen (1st) use the pen id of 17
+		 * xiaomi smart pen (2st) use the pen id of 18
+		 * if the pen id 18, use the new firmware. */
+		ts->pen_update = (nvt_value == 18) ? true : false;
+#endif
 		disable_pen_input_device(!ts->pen_input_dev_enable);
 		release_pen_event();
 		return 0;
@@ -3175,6 +3209,7 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 
 #ifdef CONFIG_TOUCHSCREEN_COMMON
 		ret = tp_common_set_pen_ops(&pen_ops);
+		ret = tp_common_set_pen_update_ops(&pen_update_ops);
 		if (ret < 0) {
 			NVT_ERR("%s: Failed to create pen node err=%d\n",
 				__func__, ret);

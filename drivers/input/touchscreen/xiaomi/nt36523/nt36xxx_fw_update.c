@@ -363,6 +363,11 @@ static int32_t update_firmware_request(const char *filename)
 	uint8_t retry = 0;
 	int32_t ret = 0;
 
+#ifdef CONFIG_TOUCHSCREEN_COMMON
+	if (ts->pen_update)
+		filename = "novatek_nt36523_fw01_pen.bin";
+#endif
+
 	if (NULL == filename) {
 		return -ENOENT;
 	}
